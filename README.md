@@ -1,5 +1,125 @@
 ![demo-gif](demo.gif)
 
+## uvc-gadget README
+
+### Dirty hack
+This is a dirty and heavily unoptimized fork of https://github.com/hacksider/Deep-Live-Cam
+with some lame hack and scripts which add uvc-gadget functionality to the project.
+_(pretty sure upstream will have a rtps stream-out functionality soon, which will make the Deep-Live-Cam hack part of this project obsolete)_
+
+*massive la, low fps, no audio...*
+
+I doubt I will spend much time into polishing this and it is too fragile to get it merged into upstream.
+You better should wait until someone provides a more straightforward solution - you have been warned :)
+It works in my environment at least for some fun, ymmv.
+
+### environment
+
+Deep-Live-Cam is running on a headless pretty strong machine _(*AAA*)_ here. An usb cam is directly connected to it and uses the device node `/dev/video0`.
+
+A separate device is used as uvc-gadget - I use a *rpi4*, which offers otg functionality through the usb-c port.
+As the uvc-gadget is attached to a usb-hub which is switched between multiple machines, I use a usb-c splitter cable with pd and otg functionality
+_(to keep power for the *rpi4* stable when switching the usb hub)_
+
+_(not every computer has otg support! There is a `dummy_hcd` kernel module which emulates that function, but it seems like it is not uvc compatible)_
+
+### workflow chain:
+
+rpi4:
+
+prepare two video4loopback devices:
+
+```
+modprobe v4l2loopback devices="2" video_nr="23,24" max_buffers="8" max_width="640" max_height="480"
+v4l2loopback-ctl set-fps 30 /dev/video23
+v4l2loopback-ctl set-fps 30 /dev/video24
+```
+
+prepare a usb gadget device
+there are multiple scripts which could be used _(as an example [this](https://www.raspberrypi.com/tutorials/plug-and-play-raspberry-pi-usb-webcam/) one looks good)_
+I successfully used `gadget-uvc` from the [libusbgx](https://github.com/linux-usb-gadgets/libusbgx) project instead
+
+You should end up with a `/dev/video0` gadget device and two v4l2loopback devices:
+
+```
+v4l2-ctl --list-devices
+fe980000.usb (gadget.0):
+	/dev/video0
+
+Dummy video device (0x0000) (platform:v4l2loopback-000):
+	/dev/video23
+
+Dummy video device (0x0001) (platform:v4l2loopback-001):
+	/dev/video24
+```
+
+install ffmpeg, uvc-gadget (I used https://github.com/wlhe/uvc-gadget, but upstream - mentioned in the readme - very likely works as well),
+copy 'get-deep-live-cam-stream.py' from this project to /usr/local/bin, adjust it to your needs, make sure the deps are installed and working _(v4l2, pickle)_
+
+To activate your usb gadget the content of /sys/class/udc/ needs to be written to
+/sys/kernel/config/usb_gadget/${YOURDEVICENAME}/UDC
+
+your script/tool you use might have already done this for you (`gadget-uvc` did) - just cat the UDC file to find out - on my rpi4:
+
+```
+cat /sys/kernel/config/usb_gadget/g1/UDC 
+fe980000.usb
+```
+
+AAA:
+
+After selecting a face and clicking "Live", Deep-Live-Cam is opening a socket _(on port 9999)_ and is waiting for a client connection before it continues.
+
+rpi4:
+
+
+terminal 1:
+
+`get-deep-live-cam-stream.py`
+
+_(connects to the socket and streams the received Deep-Live-Cam modified frames into the v4l2loopback device /dev/video23)_
+
+_(the script uses the python 'v4l2' module - it seems to be unmaintained for years and needed some minor manual edits to get it working)_
+
+terminal 2:
+
+`ffmpeg -i /dev/video23 -f v4l2 -vcodec rawvideo -pix_fmt yuyv422 /dev/video24`
+
+_(converts the video format in /dev/video23 to a v4l/uvc gadget compatible format with the v4l2loopback device /dev/video24 as destination)_
+
+terminal 3:
+
+`uvc-gadget -f 0 -o 1 -r 0 -s 1 -v /dev/video24 -u /dev/video0`
+_(writes the /dev/video24 video stream into the uvc gadget device /dev/video0, upstream uvc-gadget uses different command line parameters - those used work for me for now)_
+
+
+*PROFIT*
+
+when everything works as it should, the device, which has the usb-gadget attached now has a working usb webcam with the modified face
+_(`1d6b:0104 Linux Foundation Multifunction Composite Gadget` when using `gadget-uvc`)_
+Of course no special drivers are required on that device, just use any program which works with webcams.
+
+exiting the program:
+kill it with fire
+
+
+### Deep-Live-Cam v4l2loopback video source 
+side hint:
+
+As an alternative to a physical webcam you could as well use any rtsp stream (of a network camera for example) as Deep-Live-Cam source and stream it to a v4l2loopback device.
+
+```
+SRC="rtsp://your.rtsp.source:8554/eugen"
+
+if ! lsmod | grep -q v4l2loopback; then
+  modprobe v4l2loopback devices="1" video_nr="0" max_buffers="8" max_width="640" max_height="480"
+  v4l2loopback-ctl set-fps 25 /dev/video0
+fi
+ffmpeg -i ${SRC} -f v4l2 /dev/video0
+```
+
+# original Deep-Live-Cam readme starting here:
+
 
 ## Disclaimer
 This software is meant to be a productive contribution to the rapidly growing AI-generated media industry. It will help artists with tasks such as animating a custom character or using the character as a model for clothing etc.

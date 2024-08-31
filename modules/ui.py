@@ -4,6 +4,9 @@ import customtkinter as ctk
 from typing import Callable, Tuple
 import cv2
 from PIL import Image, ImageOps
+import socket
+import pickle
+import struct
 
 import modules.globals
 import modules.metadata
@@ -318,9 +321,9 @@ def webcam_preview():
     global preview_label, PREVIEW
 
     camera = cv2.VideoCapture(0)                                    # Use index for the webcam (adjust the index accordingly if necessary)    
-    camera.set(cv2.CAP_PROP_FRAME_WIDTH, PREVIEW_DEFAULT_WIDTH)     # Set the width of the resolution
-    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, PREVIEW_DEFAULT_HEIGHT)   # Set the height of the resolution
-    camera.set(cv2.CAP_PROP_FPS, 60)                                # Set the frame rate of the webcam
+#    camera.set(cv2.CAP_PROP_FRAME_WIDTH, PREVIEW_DEFAULT_WIDTH)     # Set the width of the resolution
+#    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, PREVIEW_DEFAULT_HEIGHT)   # Set the height of the resolution
+#    camera.set(cv2.CAP_PROP_FPS, 60)                                # Set the frame rate of the webcam
 
     preview_label.configure(width=PREVIEW_DEFAULT_WIDTH, height=PREVIEW_DEFAULT_HEIGHT)  # Reset the preview image before startup
 
@@ -329,6 +332,18 @@ def webcam_preview():
     frame_processors = get_frame_processors_modules(modules.globals.frame_processors)
 
     source_image = None  # Initialize variable for the selected face image
+
+    HOST=''
+    PORT=9999
+    # Create a socket server
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind((HOST, PORT))  # Replace with the server's IP address
+    server_socket.listen(10)
+
+    # Accept a client connection
+    print(f"[*] Accepting connection")
+    client_socket, client_address = server_socket.accept()
+    print(f"[*] Accepted connection from {client_address}")
 
     while camera:
         ret, frame = camera.read()
@@ -356,6 +371,11 @@ def webcam_preview():
         image = ctk.CTkImage(image, size=image.size)
         preview_label.configure(image=image)
         ROOT.update()
+
+		# send ready deep frame to socket
+        serialized_frame = pickle.dumps(temp_frame)
+        message_size = struct.pack("L", len(serialized_frame))
+        client_socket.sendall(message_size + serialized_frame)
 
         if PREVIEW.state() == 'withdrawn':
             break
