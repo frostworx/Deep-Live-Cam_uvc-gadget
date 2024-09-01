@@ -7,7 +7,7 @@ This is a dirty and heavily unoptimized fork of https://github.com/hacksider/Dee
 with some lame hack and scripts which add uvc-gadget functionality to the project.
 _(pretty sure upstream will have a rtps stream-out functionality soon, which will make the Deep-Live-Cam hack part of this project obsolete)_
 
-*massive la, low fps, no audio...*
+*massive lag, low fps, no audio...*
 
 I doubt I will spend much time into polishing this and it is too fragile to get it merged into upstream.
 You better should wait until someone provides a more straightforward solution - you have been warned :)
@@ -23,7 +23,55 @@ _(to keep power for the *rpi4* stable when switching the usb hub)_
 
 _(not every computer has otg support! There is a `dummy_hcd` kernel module which emulates that function, but it seems like it is not uvc compatible)_
 
-### workflow chain:
+### scripts
+copy both `get-deep-live-cam-stream.py` and `get-deep-live-cam-stream.sh` into `$PATH` _(`/usr/local/bin/`)_ to your uvc-gadget device (*rpi4*)
+
+adjust both scripts to your needs:
+
+at least `DEEPSRV` in `get-deep-live-cam-stream.py` needs to point to your deep-live-cam server IP
+you might want to adjust `PYPATH` in `get-deep-live-cam-stream.sh` when using python3 from a venv
+
+
+#### requirements:
+
+deep-live-cam requires the pickle python module additionally
+
+client scripts on the uvc-gadget device _(*rpi4*)_:
+
+- ffmpeg
+- uvc-gadget _(I used https://github.com/wlhe/uvc-gadget, but upstream - mentioned in the readme - very likely works as well)_,
+- a tool/script to create the basic uvc usb gadget device:
+  there are multiple scripts which could be used _(as an example [this](https://www.raspberrypi.com/tutorials/plug-and-play-raspberry-pi-usb-webcam/) one looks good)_
+  I successfully used `gadget-uvc` from the [libusbgx](https://github.com/linux-usb-gadgets/libusbgx) project instead
+- `get-deep-live-cam-stream.py` requires _(v4l2 and pickle)_ python modules _(you might want to use a venv)_
+
+### usage:
+
+deep-live-cam server _(*AAA*)_:
+
+start deep-live-cam regularly
+After selecting a face and clicking "Live", Deep-Live-Cam is opening a socket _(on port 9999)_ and is waiting for a client connection before it continues.
+
+uvc-gadget device _(*rpi4*)_:
+
+run 
+`get-deep-live-cam-stream.sh`
+
+it starts multiple subproccess in sorted order:
+
+- loads v4l2loopback kernel module and creates two devices
+- optionally starts `gadget-uvc`
+- starts the processes `get-deep-live-cam-stream.py`, which connects to Deep-Live-Cam, retreives the manipulated frames and writes them into v4l2loopback device 1
+- starts an ffmpeg process which converts the v4l2loopback device 1 data into v4l2 compatible format and stores it in v4l2loopback device 2
+- starts the uvc-gadget process which makes the v4l2loopback device 2 data available via usb gadget device to the otg-connected machine
+
+A helper file `/tmp/deep.txt` is used to take care for correct launch timing.
+It can also be used to stop all processes, simply by deleting the file manually
+
+
+### single steps in the workflow chain:
+
+Only for the curious - with some luck the above usage is enough to get it running
 
 rpi4:
 
@@ -36,8 +84,7 @@ v4l2loopback-ctl set-fps 30 /dev/video24
 ```
 
 prepare a usb gadget device
-there are multiple scripts which could be used _(as an example [this](https://www.raspberrypi.com/tutorials/plug-and-play-raspberry-pi-usb-webcam/) one looks good)_
-I successfully used `gadget-uvc` from the [libusbgx](https://github.com/linux-usb-gadgets/libusbgx) project instead
+
 
 You should end up with a `/dev/video0` gadget device and two v4l2loopback devices:
 
@@ -53,8 +100,7 @@ Dummy video device (0x0001) (platform:v4l2loopback-001):
 	/dev/video24
 ```
 
-install ffmpeg, uvc-gadget (I used https://github.com/wlhe/uvc-gadget, but upstream - mentioned in the readme - very likely works as well),
-copy 'get-deep-live-cam-stream.py' from this project to /usr/local/bin, adjust it to your needs, make sure the deps are installed and working _(v4l2, pickle)_
+
 
 To activate your usb gadget the content of /sys/class/udc/ needs to be written to
 /sys/kernel/config/usb_gadget/${YOURDEVICENAME}/UDC

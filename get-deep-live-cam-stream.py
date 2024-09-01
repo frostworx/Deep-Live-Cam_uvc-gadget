@@ -8,13 +8,15 @@ import v4l2
 import fcntl
 
 # ugly frankensteined pseudocode to receive video packets from a socket and squeeze them into a v4l2loopback device
+# change at least 'DEEPSRV' to match your Deep-Live-Cam server ip
 
-# change at least 'YOUR.AAA.IP' to your Deep-Live-Cam server ip
-
+DEEPRUN = "/tmp/deep.txt"
+DEEPSRV = '192.168.1.111'
+DEEPORT = 9999
 
 # Create a socket client
 video_client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-video_client_socket.connect(('YOUR.AAA.IP', 9999))  # Replace with the server’s IP address
+video_client_socket.connect((DEEPSRV, DEEPORT))  # Replace with the server’s IP address
 
 received_data = b""
 payload_size = struct.calcsize("L")
@@ -37,8 +39,13 @@ format.fmt.pix.height       = height
 format.fmt.pix.bytesperline = width * channels
 format.fmt.pix.sizeimage    = width * height * channels
 
+running = 0
+
 print ("set format result (0 is good):{}".format(fcntl.ioctl(device, v4l2.VIDIOC_S_FMT, format)))
 print("begin loopback write")
+
+if os.path.exists(DEEPRUN):
+    os.remove(DEEPRUN)
 
 while True:
     # Receive and assemble the data until the payload size is reached
@@ -63,6 +70,15 @@ while True:
 
     # send frame to v4l2loopback device
     device.write(received_frame)
+
+    # the follow up ffmpeg command is ready to start when this file exists
+    if not os.path.exists(DEEPRUN) and running == 0:
+        with open(DEEPRUN, 'w'): pass
+        running = 1
+
+    # when this file is gone, the program exits (and ffmpeg as well)
+    if not os.path.exists(DEEPRUN) and running == 1:
+        break
 
     # Press ‘q’ to quit
     if cv2.waitKey(1) & 0xFF == ord('q'):
